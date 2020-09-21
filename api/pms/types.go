@@ -53,11 +53,11 @@ type RolePolicy struct {
 }
 
 type Service struct {
-	Name         string            `json:"name" binding:"required"  bson:"_id"`
-	Type         string            `json:"type,omitempty" bson:"type,omitempty"`
-	Policies     []*Policy         `json:"policies,omitempty" bson:"policies,omitempty"`
-	RolePolicies []*RolePolicy     `json:"rolePolicies,omitempty" bson:"rolepolicies,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty" bson:"metadata,omitempty"`
+	Name         string            `json:"name" binding:"required" bson:"_id" db:"name"`
+	Type         string            `json:"type,omitempty" bson:"type,omitempty" db:"type"`
+	Policies     []*Policy         `json:"policies,omitempty" bson:"policies,omitempty" db:"policies"`
+	RolePolicies []*RolePolicy     `json:"rolePolicies,omitempty" bson:"rolepolicies,omitempty" db:"role_policies"`
+	Metadata     map[string]string `json:"metadata,omitempty" bson:"metadata,omitempty" db:"metadata"`
 }
 
 const GlobalService = "global"
