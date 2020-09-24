@@ -217,7 +217,17 @@ func (s *Store) GetPolicyAndRolePolicyCounts() (map[string]*pms.PolicyAndRolePol
 }
 
 func (s *Store) ReadPolicyStore() (*pms.PolicyStore, error) {
-	panic("not implemented") // TODO: Implement
+	var ps pms.PolicyStore
+	services, err := s.ListAllServices()
+	if err != nil {
+		return nil, err
+	}
+	ps.Services = services
+
+	ps.Functions = nil
+
+	return &ps, nil
+
 }
 
 func (s *Store) WritePolicyStore(_ *pms.PolicyStore) error {
