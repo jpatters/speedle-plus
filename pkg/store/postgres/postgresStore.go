@@ -104,7 +104,7 @@ func (s *Store) DeleteServices() error {
 	}
 
 	if rowCount == 0 {
-		return errors.New("unable to delete service; service does not exist")
+		log.Info("No rows to delete")
 	}
 
 	return nil
