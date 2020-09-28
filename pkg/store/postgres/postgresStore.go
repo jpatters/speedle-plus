@@ -655,8 +655,7 @@ func (s *Store) Watch() (pms.StorageChangeChannel, error) {
 }
 
 func (s *Store) StopWatch() {
-	log.Info("Stop watch!")
-	panic("1not implemented") // TODO: Implement
+
 }
 
 func (s *Store) prefixedTable(name string) string {
