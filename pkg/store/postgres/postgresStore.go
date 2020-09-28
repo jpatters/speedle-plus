@@ -238,8 +238,26 @@ func (s *Store) ReadPolicyStore() (*pms.PolicyStore, error) {
 
 }
 
-func (s *Store) WritePolicyStore(_ *pms.PolicyStore) error {
-	panic("not implemented") // TODO: Implement
+func (s *Store) WritePolicyStore(ps *pms.PolicyStore) error {
+	err := s.DeleteServices()
+	if err != nil {
+		return err
+	}
+
+	for _, service := range ps.Services {
+		err := s.CreateService(service)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, function := range ps.Functions {
+		_, err := s.CreateFunction(function)
+		if err == nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) Type() string {
