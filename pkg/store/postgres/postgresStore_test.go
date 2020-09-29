@@ -11,12 +11,11 @@ import (
 	"github.com/teramoby/speedle-plus/pkg/store"
 )
 
+var speedleStore pms.PolicyStoreManager
 var storeConfig *cfg.StoreConfig
 
 func TestMain(m *testing.M) {
-	der := testMain(m)
-	fmt.Println(der)
-	os.Exit(der)
+	os.Exit(testMain(m))
 }
 
 func testMain(m *testing.M) int {
@@ -25,17 +24,17 @@ func testMain(m *testing.M) int {
 	if err != nil {
 		log.Fatal("fail to read config file", err)
 	}
-
+	speedleStore, err = store.NewStore(storeConfig.StoreType, storeConfig.StoreProps)
+	if err != nil {
+		fmt.Println("Could not initialize postgres store ")
+		return 1
+	}
 	return m.Run()
 }
 
 func TestWriteReadPolicyStore(t *testing.T) {
-	store, err := store.NewStore(storeConfig.StoreType, storeConfig.StoreProps)
-	if err != nil {
-		t.Fatal("Failed to create new postgres store", err)
-	}
 
-	psr, err := store.ReadPolicyStore()
+	psr, err := speedleStore.ReadPolicyStore()
 	if err != nil {
 		t.Fatal("failed to read policy store: ", err)
 	} else {
@@ -48,12 +47,12 @@ func TestWriteReadPolicyStore(t *testing.T) {
 		ps.Services = append(ps.Services, &service)
 	}
 
-	err = store.WritePolicyStore(&ps)
+	err = speedleStore.WritePolicyStore(&ps)
 	if err != nil {
 		t.Fatal("failed to write policy store", err)
 	}
 
-	psr, err = store.ReadPolicyStore()
+	psr, err = speedleStore.ReadPolicyStore()
 	if err != nil {
 		t.Fatal("fail to read policy store:", err)
 	}
@@ -67,16 +66,11 @@ func TestWriteReadPolicyStore(t *testing.T) {
 }
 
 func TestManagePolicies(t *testing.T) {
-	store, err := store.NewStore(storeConfig.StoreType, storeConfig.StoreProps)
 
-	if err != nil {
-		t.Fatal("Failed to create new postgres store", err)
-	}
-
-	store.DeleteService("service1")
+	speedleStore.DeleteService("service1")
 
 	app := pms.Service{Name: "service1", Type: pms.TypeApplication}
-	err = store.CreateService(&app)
+	err := speedleStore.CreateService(&app)
 
 	if err != nil {
 		t.Fatal("failed to create application", err)
@@ -93,23 +87,23 @@ func TestManagePolicies(t *testing.T) {
 	}
 
 	policy.Principals = [][]string{{"user:Alice"}}
-	policyR, err := store.CreatePolicy("service1", &policy)
+	policyR, err := speedleStore.CreatePolicy("service1", &policy)
 	if err != nil {
 		t.Fatal("failed to create policy: ", err)
 	}
 
-	policyR1, err := store.GetPolicy("service1", policyR.ID)
+	policyR1, err := speedleStore.GetPolicy("service1", policyR.ID)
 	t.Log(policyR1)
 	if err != nil {
 		t.Fatal("failed to get policy: ", err)
 	}
 
-	policies, err := store.ListAllPolicies("service1", "")
+	policies, err := speedleStore.ListAllPolicies("service1", "")
 	if len(policies) != 1 {
 		t.Fatal("should have 1 policy")
 	}
 
-	counts, err := store.GetPolicyAndRolePolicyCounts()
+	counts, err := speedleStore.GetPolicyAndRolePolicyCounts()
 	if err != nil {
 		t.Fatal("failed to getCounts", err)
 	}
@@ -121,20 +115,20 @@ func TestManagePolicies(t *testing.T) {
 		t.Fatal("incorrect number of role policies")
 	}
 
-	_, err = store.GetPolicy("service1", "nonexistantID")
+	_, err = speedleStore.GetPolicy("service1", "nonexistantID")
 	t.Log(err)
 
 	if err == nil {
 		t.Fatal("should have failed to get policy")
 	}
 
-	err = store.DeletePolicy("service1", "nonexistantID")
+	err = speedleStore.DeletePolicy("service1", "nonexistantID")
 	t.Log(err)
 	if err == nil {
 		t.Fatal("should have failed to delete policy")
 	}
 
-	err = store.DeletePolicy("service1", policyR.ID)
+	err = speedleStore.DeletePolicy("service1", policyR.ID)
 	if err != nil {
 		t.Fatal("failed to delete policy", err)
 	}
@@ -142,16 +136,10 @@ func TestManagePolicies(t *testing.T) {
 }
 
 func TestManageRolePolicies(t *testing.T) {
-	store, err := store.NewStore(storeConfig.StoreType, storeConfig.StoreProps)
-
-	if err != nil {
-		t.Fatal("Failed to create new postgres store", err)
-	}
-
 	//clean the service firstly
-	store.DeleteService("service1")
+	speedleStore.DeleteService("service1")
 	app := pms.Service{Name: "service1", Type: pms.TypeApplication}
-	err = store.CreateService(&app)
+	err := speedleStore.CreateService(&app)
 	if err != nil {
 		t.Fatal("fail to create application:", err)
 	}
@@ -161,17 +149,17 @@ func TestManageRolePolicies(t *testing.T) {
 	rolePolicy.Roles = []string{"role1"}
 	rolePolicy.Principals = []string{"user:Alice"}
 
-	policyR, err := store.CreateRolePolicy("service1", &rolePolicy)
+	policyR, err := speedleStore.CreateRolePolicy("service1", &rolePolicy)
 	if err != nil {
 		t.Fatal("fail to create role policy:", err)
 	}
-	policyR1, err := store.GetRolePolicy("service1", policyR.ID)
+	policyR1, err := speedleStore.GetRolePolicy("service1", policyR.ID)
 	t.Log(policyR1)
 	if err != nil {
 		t.Fatal("fail to get role policy:", err)
 	}
 
-	rolePolicies, err := store.ListAllRolePolicies("service1", "")
+	rolePolicies, err := speedleStore.ListAllRolePolicies("service1", "")
 	if err != nil {
 		t.Fatal("fail to list role policies:", err)
 	}
@@ -179,7 +167,7 @@ func TestManageRolePolicies(t *testing.T) {
 		t.Fatal("should have 1 role policy")
 	}
 
-	counts, err := store.GetPolicyAndRolePolicyCounts()
+	counts, err := speedleStore.GetPolicyAndRolePolicyCounts()
 	if err != nil {
 		t.Fatal("Fail to getCounts", err)
 	}
@@ -190,41 +178,37 @@ func TestManageRolePolicies(t *testing.T) {
 		t.Fatal("incorrect role policy number")
 	}
 
-	_, err = store.GetRolePolicy("service1", "nonexistID")
+	_, err = speedleStore.GetRolePolicy("service1", "nonexistID")
 	t.Log(err)
 	if err == nil {
 		t.Fatal("should fail to get role policy")
 	}
 
-	err = store.DeleteRolePolicy("service1", "nonexistID")
+	err = speedleStore.DeleteRolePolicy("service1", "nonexistID")
 	t.Log(err)
 	if err == nil {
 		t.Fatal("should fail to delete role policy")
 	}
 
-	err = store.DeleteRolePolicy("service1", policyR.ID)
+	err = speedleStore.DeleteRolePolicy("service1", policyR.ID)
 	if err != nil {
 		t.Fatal("fail to delete role policy:", err)
 	}
 }
 
 func TestCheckItemsCount(t *testing.T) {
-	store, err := store.NewStore(storeConfig.StoreType, storeConfig.StoreProps)
 
-	if err != nil {
-		t.Fatal("Failed to create new postgres store", err)
-	}
 	// clean the services
-	store.DeleteServices()
+	speedleStore.DeleteServices()
 
 	// Create service1
 	app1 := pms.Service{Name: "service1", Type: pms.TypeApplication}
-	err = store.CreateService(&app1)
+	err := speedleStore.CreateService(&app1)
 	if err != nil {
 		t.Fatal("fail to create service:", err)
 	}
 	// Check service count
-	serviceCount, err := store.GetServiceCount()
+	serviceCount, err := speedleStore.GetServiceCount()
 	if err != nil {
 		t.Fatal("Failed to get service count:", err)
 	}
@@ -239,13 +223,13 @@ func TestCheckItemsCount(t *testing.T) {
 		{Name: "p03", Effect: "grant", Principals: [][]string{{"user:user3"}}},
 	}
 	for _, policy := range policies {
-		_, err := store.CreatePolicy("service1", &policy)
+		_, err := speedleStore.CreatePolicy("service1", &policy)
 		if err != nil {
 			t.Fatal("fail to create policy:", err)
 		}
 	}
 	// Check policy count
-	policyCount, err := store.GetPolicyCount("service1")
+	policyCount, err := speedleStore.GetPolicyCount("service1")
 	if err != nil {
 		t.Fatal("Failed to get the policy count: ", err)
 	}
@@ -259,13 +243,13 @@ func TestCheckItemsCount(t *testing.T) {
 		{Name: "p02", Effect: "grant", Principals: []string{"user:user2"}, Roles: []string{"role2"}},
 	}
 	for _, rolePolicy := range rolePolicies {
-		_, err := store.CreateRolePolicy("service1", &rolePolicy)
+		_, err := speedleStore.CreateRolePolicy("service1", &rolePolicy)
 		if err != nil {
 			t.Fatal("Failed to get role policy count:", err)
 		}
 	}
 	// Check role Policy count
-	rolePolicyCount, err := store.GetRolePolicyCount("service1")
+	rolePolicyCount, err := speedleStore.GetRolePolicyCount("service1")
 	if err != nil {
 		t.Fatal("Failed to get the role policy count")
 	}
@@ -275,12 +259,12 @@ func TestCheckItemsCount(t *testing.T) {
 
 	// Create service2
 	app2 := pms.Service{Name: "service2", Type: pms.TypeApplication}
-	err = store.CreateService(&app2)
+	err = speedleStore.CreateService(&app2)
 	if err != nil {
 		t.Fatal("fail to create service:", err)
 	}
 	// Check service count
-	serviceCount, err = store.GetServiceCount()
+	serviceCount, err = speedleStore.GetServiceCount()
 	if err != nil {
 		t.Fatal("Failed to get service count:", err)
 	}
@@ -290,13 +274,13 @@ func TestCheckItemsCount(t *testing.T) {
 
 	// Create policies in service2
 	for _, policy := range policies {
-		_, err := store.CreatePolicy("service2", &policy)
+		_, err := speedleStore.CreatePolicy("service2", &policy)
 		if err != nil {
 			t.Fatal("fail to create policy:", err)
 		}
 	}
 	// Check policy count in service2
-	policyCount, err = store.GetPolicyCount("service2")
+	policyCount, err = speedleStore.GetPolicyCount("service2")
 	if err != nil {
 		t.Fatal("Failed to get the policy count: ", err)
 	}
@@ -304,7 +288,7 @@ func TestCheckItemsCount(t *testing.T) {
 		t.Fatalf("Policy count doesn't match, expected:%d, actual:%d", len(policies), policyCount)
 	}
 	// Check policy count in both service1 and service2
-	policyCount, err = store.GetPolicyCount("")
+	policyCount, err = speedleStore.GetPolicyCount("")
 	if err != nil {
 		t.Fatal("Failed to get the policy count: ", err)
 	}
@@ -314,13 +298,13 @@ func TestCheckItemsCount(t *testing.T) {
 
 	// Create rolePolicy in service2
 	for _, rolePolicy := range rolePolicies {
-		_, err := store.CreateRolePolicy("service2", &rolePolicy)
+		_, err := speedleStore.CreateRolePolicy("service2", &rolePolicy)
 		if err != nil {
 			t.Fatal("Failed to get role policy count:", err)
 		}
 	}
 	// Check role Policy count in service2
-	rolePolicyCount, err = store.GetRolePolicyCount("service2")
+	rolePolicyCount, err = speedleStore.GetRolePolicyCount("service2")
 	if err != nil {
 		t.Fatal("Failed to get the role policy count")
 	}
@@ -328,14 +312,14 @@ func TestCheckItemsCount(t *testing.T) {
 		t.Fatalf("RolePolicy count doesn't match, expected:%d, actual:%d", len(rolePolicies), rolePolicyCount)
 	}
 	// Check role Policy count in both service1 and service2
-	rolePolicyCount, err = store.GetRolePolicyCount("")
+	rolePolicyCount, err = speedleStore.GetRolePolicyCount("")
 	if err != nil {
 		t.Fatal("Failed to get the role policy count")
 	}
 	if rolePolicyCount != int64(len(rolePolicies)*2) {
 		t.Fatalf("RolePolicy count doesn't match, expected:%d, actual:%d", len(rolePolicies)*2, rolePolicyCount)
 	}
-	counts, err := store.GetPolicyAndRolePolicyCounts()
+	counts, err := speedleStore.GetPolicyAndRolePolicyCounts()
 	if err != nil {
 		t.Fatal("Fail to getCounts", err)
 	}
