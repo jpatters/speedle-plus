@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 
 func testMain(m *testing.M) int {
 	var err error
-	storeConfig, err = cfg.ReadStoreConfig("./postgresStoreConfig.json")
+	storeConfig, err = cfg.ReadStoreConfig("./postgresTestStoreConfig.json")
 	if err != nil {
 		log.Fatal("fail to read config file", err)
 	}
