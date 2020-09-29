@@ -645,13 +645,6 @@ func (s *Store) Watch() (pms.StorageChangeChannel, error) {
 
 	return storageChangeChan, nil
 
-	fmt.Println("Starting to monitor Postgres...")
-	for {
-		event := waitForNotification(listener)
-		fmt.Println(event)
-	}
-
-	panic("Exited earlier")
 }
 
 func (s *Store) StopWatch() {
