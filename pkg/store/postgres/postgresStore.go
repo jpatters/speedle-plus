@@ -16,6 +16,7 @@ import (
 
 type Store struct {
 	client      *sqlx.DB
+	stop        chan struct{}
 	tablePrefix string
 }
 
@@ -200,7 +201,7 @@ func (s *Store) GetServiceNames() ([]string, error) {
 }
 
 func (s *Store) GetPolicyAndRolePolicyCounts() (map[string]*pms.PolicyAndRolePolicyCount, error) {
-	query := fmt.Sprintf("SELECT name, jsonb_aray_length(policies) as policy_count, jsonb_array_length(role_policies) as role_policy_count FROM %s", s.prefixedTable("services"))
+	query := fmt.Sprintf("SELECT name, jsonb_array_length(policies) as policy_count, jsonb_array_length(role_policies) as role_policy_count FROM %s", s.prefixedTable("services"))
 	rows, err := s.client.Query(query)
 	if err != nil {
 		return nil, err
@@ -575,7 +576,6 @@ func (s *Store) Watch() (pms.StorageChangeChannel, error) {
 			fmt.Println(err.Error())
 		}
 	}
-
 	listener := pq.NewListener(conninfo, 10*time.Second, time.Minute, reportProblem)
 	err = listener.Listen("events")
 	if err != nil {
