@@ -5,20 +5,29 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
+	log "github.com/sirupsen/logrus"
 	"github.com/teramoby/speedle-plus/api/pms"
 	"github.com/xtgo/uuid"
 )
 
 type Store struct {
 	client      *sqlx.DB
+	stop        chan struct{}
 	tablePrefix string
 }
 
 type RowScanner interface {
 	Scan(dest ...interface{}) error
+}
+
+type ChangeEvent struct {
+	Table   string      `json:"table"`
+	Action  string      `json:"action"`
+	Service pms.Service `json:"data"`
 }
 
 func (s *Store) CreateService(service *pms.Service) error {
@@ -96,7 +105,7 @@ func (s *Store) DeleteServices() error {
 	}
 
 	if rowCount == 0 {
-		return errors.New("unable to delete service; service does not exist")
+		log.Info("No rows to delete")
 	}
 
 	return nil
@@ -192,7 +201,7 @@ func (s *Store) GetServiceNames() ([]string, error) {
 }
 
 func (s *Store) GetPolicyAndRolePolicyCounts() (map[string]*pms.PolicyAndRolePolicyCount, error) {
-	query := fmt.Sprintf("SELECT name, jsonb_aray_length(policies) as policy_count, jsonb_array_length(role_policies) as role_policy_count FROM %s", s.prefixedTable("services"))
+	query := fmt.Sprintf("SELECT name, jsonb_array_length(policies) as policy_count, jsonb_array_length(role_policies) as role_policy_count FROM %s", s.prefixedTable("services"))
 	rows, err := s.client.Query(query)
 	if err != nil {
 		return nil, err
@@ -217,11 +226,39 @@ func (s *Store) GetPolicyAndRolePolicyCounts() (map[string]*pms.PolicyAndRolePol
 }
 
 func (s *Store) ReadPolicyStore() (*pms.PolicyStore, error) {
-	panic("not implemented") // TODO: Implement
+	var ps pms.PolicyStore
+	services, err := s.ListAllServices()
+	if err != nil {
+		return nil, err
+	}
+	ps.Services = services
+
+	ps.Functions = nil
+
+	return &ps, nil
+
 }
 
-func (s *Store) WritePolicyStore(_ *pms.PolicyStore) error {
-	panic("not implemented") // TODO: Implement
+func (s *Store) WritePolicyStore(ps *pms.PolicyStore) error {
+	err := s.DeleteServices()
+	if err != nil {
+		return err
+	}
+
+	for _, service := range ps.Services {
+		err := s.CreateService(service)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, function := range ps.Functions {
+		_, err := s.CreateFunction(function)
+		if err == nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) Type() string {
@@ -472,35 +509,146 @@ func (s *Store) GetRolePolicyCount(serviceName string) (int64, error) {
 }
 
 func (s *Store) CreateFunction(function *pms.Function) (*pms.Function, error) {
+	log.Info("create function")
 	panic("not implemented") // TODO: Implement
 }
 
 func (s *Store) DeleteFunction(funcName string) error {
+	log.Info("Delete function")
 	panic("not implemented") // TODO: Implement
 }
 
 func (s *Store) DeleteFunctions() error {
+	log.Info("Delete functions")
 	panic("not implemented") // TODO: Implement
 }
 
 func (s *Store) GetFunction(funcName string) (*pms.Function, error) {
+	log.Info("Get function")
 	panic("not implemented") // TODO: Implement
 }
 
 func (s *Store) ListAllFunctions(filter string) ([]*pms.Function, error) {
+	log.Info("list all functions")
 	panic("not implemented") // TODO: Implement
 }
 
 func (s *Store) GetFunctionCount() (int64, error) {
+	log.Info("Get function count")
+
 	panic("not implemented") // TODO: Implement
+}
+
+func waitForNotification(l *pq.Listener) ChangeEvent {
+	for {
+		select {
+		case n := <-l.Notify:
+			fmt.Println("Received data from channel [", n.Channel, "] :")
+			// Prepare notification payload for pretty print
+			var event ChangeEvent
+			err := json.Unmarshal([]byte(n.Extra), &event)
+
+			if err != nil {
+				fmt.Println("Error processing JSON: ", err)
+				return ChangeEvent{}
+			}
+			return event
+		case <-time.After(90 * time.Second):
+			fmt.Println("Received no events for 90 seconds, checking connection")
+			go func() {
+				l.Ping()
+			}()
+			return ChangeEvent{}
+		}
+	}
 }
 
 func (s *Store) Watch() (pms.StorageChangeChannel, error) {
-	panic("not implemented") // TODO: Implement
+	log.Error("Enter Watch...")
+	conninfo := "dbname=tinateams sslmode=disable"
+	_, err := sql.Open("postgres", conninfo)
+	if err != nil {
+		panic(err)
+	}
+
+	reportProblem := func(ev pq.ListenerEventType, err error) {
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+	}
+	listener := pq.NewListener(conninfo, 10*time.Second, time.Minute, reportProblem)
+	err = listener.Listen("events")
+	if err != nil {
+		panic(err)
+	}
+
+	var storageChangeChan pms.StorageChangeChannel
+	storageChangeChan = make(chan pms.StoreChangeEvent)
+
+	go func() {
+		defer func() {
+			listener.Close()
+			close(storageChangeChan)
+		}()
+
+		for {
+			event := waitForNotification(listener)
+			if event.Table == "speedle_services" {
+				if event.Action == "UPDATE" {
+					log.Info("===update service")
+					id := time.Now().Unix()
+					serviceDeleteEvent := pms.StoreChangeEvent{
+						Type:    pms.SERVICE_DELETE,
+						ID:      id,
+						Content: []string{event.Service.Name},
+					}
+					log.Info("###serviceDeleteEvent:", serviceDeleteEvent)
+					storageChangeChan <- serviceDeleteEvent
+
+					id = time.Now().Unix()
+					serviceAddEvent := pms.StoreChangeEvent{
+						Type:    pms.SERVICE_ADD,
+						ID:      id,
+						Content: &event.Service,
+					}
+					log.Info("###serviceAddEvent", serviceAddEvent)
+					storageChangeChan <- serviceAddEvent
+
+				} else if event.Action == "DELETE" {
+					log.Info("===delete service")
+					id := time.Now().Unix()
+					serviceDeleteEvent := pms.StoreChangeEvent{
+						Type:    pms.SERVICE_DELETE,
+						ID:      id,
+						Content: []string{event.Service.Name},
+					}
+					log.Info("###serviceDeleteEvent:", serviceDeleteEvent)
+					storageChangeChan <- serviceDeleteEvent
+
+				} else if event.Action == "CREATE" {
+
+					log.Info("===create service")
+					id := time.Now().Unix()
+					serviceAddEvent := pms.StoreChangeEvent{
+						Type:    pms.SERVICE_ADD,
+						ID:      id,
+						Content: &event.Service,
+					}
+					log.Info("###serviceAddEvent", serviceAddEvent)
+					storageChangeChan <- serviceAddEvent
+
+				}
+
+			}
+		}
+	}()
+
+	return storageChangeChan, nil
+
 }
 
 func (s *Store) StopWatch() {
-	panic("not implemented") // TODO: Implement
+
 }
 
 func (s *Store) prefixedTable(name string) string {

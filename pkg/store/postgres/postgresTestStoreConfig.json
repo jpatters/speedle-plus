@@ -1,0 +1,9 @@
+{
+  "storeType": "postgres",
+  "storeProps": {
+    "PostgresURI": "postgres://localhost:5432/speedletest?sslmode=disable",
+    "PostgresMaxOpenConns": 10,
+    "PostgresMaxIdleConns": 10,
+    "PostgresTablePrefix": "speedle_"
+  }
+}
